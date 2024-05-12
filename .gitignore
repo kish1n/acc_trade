@@ -2,7 +2,7 @@
 .venv/
 .vscode/
 .dockerignore
-.docker-compose.yml
+docker-compose.yml
 Dockerfile
-.idea/
+.idea
 __pycache__/
