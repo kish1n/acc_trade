@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional, Dict
 from functools import partial
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.future import select
@@ -40,6 +40,14 @@ async def get_prd(fst_id: int, lst_id: int, session: AsyncSession = Depends(get_
 
     return [product_to_dict(item) for item in items]
 
+@router.get("/item/{id}")
+async def get_products_by_tags_and_id(id: int) -> List[dict]:
+    items = await Core.get_products_by_id(id)
+    if not items:
+        raise HTTPException(status_code=404, detail="Product not found with the given id")
+
+    return [product_to_dict(item) for item in items]
+
 @router.get("/{tags}/sorted/{method}")
 async def get_products_by_tags(tags: str, offset: int = 0, limit: int = 30, method: str = "default") -> List[dict]:
 
@@ -51,13 +59,35 @@ async def get_products_by_tags(tags: str, offset: int = 0, limit: int = 30, meth
 
     return [product_to_dict(item) for item in items]
 
-@router.get("/item/{id}")
-async def get_products_by_tags_and_id(id: int) -> List[dict]:
-    items = await Core.get_products_by_id(id)
-    if not items:
-        raise HTTPException(status_code=404, detail="Product not found with the given id")
+@router.post("/add/item")
+async def add_product(name: str, price: int, description: str, tags: str, main_img: str, rating_elo: int,
+                      rating_name) -> dict:
+    try:
+        item = await Core.add_product({
+            "name": name,
+            "price": price,
+            "description": description,
+            "tags": tags,
+            "main_img": main_img,
+            "rating_elo": rating_elo,
+            "rating_name": rating_name
+        })
 
-    return [product_to_dict(item) for item in items]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return product_to_dict(item)
+
+@router.post("/delete/item")
+async def delete_product(id: int) -> dict:
+    try:
+        item = await Core.delete_product(id)
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return product_to_dict(item)
+
 
 
 

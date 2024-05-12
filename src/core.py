@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from sqlalchemy import and_, asc, desc, func, Integer, cast
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.future import select
@@ -46,51 +47,6 @@ class Core:
             return items
 
     @staticmethod
-    async def sorted_products_by_price(tags: str = "default", offset: int = 0, limit: int = 30, up: bool = False):
-        tags_list = tags.split('&')
-        conditions = [Product.tags.op("~")(f"\\y{tag}\\y") for tag in tags_list]
-        order_clause = None
-        if up:
-            order_clause = asc(Product.price)
-        else:
-            order_clause = desc(Product.price)
-        async with async_session_factory() as session:
-            stmt = (
-                select(Product)
-                .where(and_(*conditions))  # Применяем все условия фильтрации
-                .order_by(order_clause)  # Добавляем сортировку по полю price
-                .offset(offset)  # Устанавливаем смещение для пагинации
-                .limit(limit)  # Устанавливаем лимит на количество возвращаемых элементов
-                .options(selectinload(Product.images))  # Предварительная загрузка связанных изображений
-            )
-            result = await session.execute(stmt)
-            items = result.scalars().all()
-            return items
-
-    @staticmethod
-    async def sorted_products_by_rating(tags: str = "default", offset: int = 0, limit: int = 30, up: bool = False):
-        async with async_session_factory() as session:
-            tags_list = tags.split('&')
-            conditions = [Product.tags.op("~")(f"\\y{tag}\\y") for tag in tags_list]
-            order_clause = None
-            if up:
-                order_clause = asc(cast(Product.game_rating['rating'], Integer))
-            else:
-                order_clause = desc(cast(Product.game_rating['rating'], Integer))
-
-            stmt = (
-                select(Product)
-                .where(and_(*conditions))  # Применяем все условия фильтрации
-                .order_by(order_clause)  # Устанавливаем порядок сортировки
-                .offset(offset)  # Смещение для пагинации
-                .limit(limit)  # Ограничение на количество элементов
-                .options(selectinload(Product.images))  # Предзагрузка связанных изображений
-            )
-            result = await session.execute(stmt)
-            items = result.scalars().all()
-            return items
-
-    @staticmethod
     async def sorted_products(method: str, tags: str, offset: int = 0, limit: int = 30):
         async with async_session_factory() as session:
             tags_list = tags.split('&')
@@ -117,3 +73,52 @@ class Core:
             result = await session.execute(stmt)
             items = result.scalars().all()
             return items
+
+    @staticmethod
+    async def add_product(self: dict):
+        async with async_session_factory() as session:
+            async with session.begin():
+                product = Product(
+                    name=self['name'],
+                    price=int(self['price']),
+                    description=self['description'],
+                    tags=self['tags'],
+                    main_img=self['main_img'],
+                    game_rating={
+                        "rating": int(self['rating_elo']),
+                        "description": self['rating_name']
+                    }
+                )
+                session.add(product)
+                await session.flush()
+
+            await session.commit()
+            session.expunge_all()
+
+            product = await session.execute(
+                select(Product).options(selectinload(Product.images)).where(Product.id == product.id)
+            )
+            product = product.scalars().one()
+            return product
+
+    @staticmethod
+    async def delete_product(p_id: int):
+        async with async_session_factory() as session:
+            async with session.begin():
+                try:
+                    stmt = select(Product).where(Product.id == p_id)
+                    result = await session.execute(stmt)
+                    item = result.scalars().one_or_none()
+                    if item is None:
+                        print(f"Product with ID {p_id} not found.")
+                        return {"message": "Product not found", "id": p_id}
+
+                    await session.delete(item)
+                    print(f"Product with ID {p_id} scheduled for deletion.")
+                    await session.commit()
+                    return {"message": "Product deleted", "id": p_id}
+
+                except Exception as e:
+                    print(f"Error during deletion: {str(e)}")
+                    await session.rollback()
+                    raise HTTPException(status_code=500, detail=str(e))

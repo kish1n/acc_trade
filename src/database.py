@@ -10,7 +10,7 @@ async_engine = create_async_engine(
     url=settings.DATABASE_URL_asyncpg,
 )
 
-async_session_factory = async_sessionmaker(async_engine)
+async_session_factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
 class Base(DeclarativeBase):
     pass

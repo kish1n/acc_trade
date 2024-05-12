@@ -20,7 +20,7 @@ class Image(Base):
 
 class Product(Base):
     __tablename__ = 'product'
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String)
     price = Column(Integer)
     description = Column(String)

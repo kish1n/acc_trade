@@ -34,5 +34,5 @@ app.include_router(products_router)
 
 @app.get("/")
 async def startup_event():
-    #await Core.create_tables()
-    return {"message": "Hello World"}
+    await Core.create_tables()
+    return {"message": "rework db done"}
