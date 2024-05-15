@@ -1,7 +1,7 @@
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from fastapi_users.db import SQLAlchemyUserDatabase
-from sqlalchemy import Column, Integer, String, Boolean, MetaData
+from sqlalchemy import Column, Integer, String, Boolean, MetaData, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base, async_engine
@@ -30,5 +30,6 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     is_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
+    user_products: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=True)
 
 user_db = SQLAlchemyUserDatabase(User, async_engine)

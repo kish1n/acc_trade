@@ -30,3 +30,4 @@ class Product(Base):
     id_user = Column(Integer, ForeignKey('user.id'))
 
     images = relationship("Image", back_populates="product")
+    output_data = Column(JSONB)

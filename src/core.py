@@ -1,8 +1,8 @@
 from fastapi import HTTPException, Depends
-from sqlalchemy import and_, asc, desc, func, Integer, cast
+from sqlalchemy import and_, asc, desc, func, Integer, cast, update
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 
@@ -79,6 +79,7 @@ class Core:
     async def add_product(self: dict):
         async with async_session_factory() as session:
             async with session.begin():
+                # Создаем новый продукт
                 product = Product(
                     name=self['name'],
                     price=int(self['price']),
@@ -89,18 +90,36 @@ class Core:
                         "rating": int(self['rating_elo']),
                         "description": self['rating_name']
                     },
-                    id_user=self['id_user']
+                    id_user=self['id_user'],
+                    output_data={
+                        "username": self['username'],
+                        "email": self['email'],
+                        "password": self['password']
+                    }
                 )
                 session.add(product)
                 await session.flush()
 
+                # Получаем ID нового продукта
+                new_product_id = product.id
+
+                # Обновляем колонку user_products у пользователя
+                user_stmt = select(User).where(User.id == self['id_user'])
+                user_result = await session.execute(user_stmt)
+                user = user_result.scalars().one_or_none()
+
+                if user:
+                    if user.user_products is None:
+                        user.user_products = []
+                    user.user_products.append(new_product_id)
+
+                    # Обновляем пользователя в базе данных
+                    user_update_stmt = update(User).where(User.id == user.id).values(user_products=user.user_products)
+                    await session.execute(user_update_stmt)
+
             await session.commit()
             session.expunge_all()
 
-            product = await session.execute(
-                select(Product).options(selectinload(Product.images)).where(Product.id == product.id)
-            )
-            product = product.scalars().one()
             return product
 
     @staticmethod
@@ -108,16 +127,35 @@ class Core:
         async with async_session_factory() as session:
             async with session.begin():
                 try:
-                    stmt = select(Product).where(Product.id == p_id)
+                    stmt = select(Product).where(Product.id == p_id).options(joinedload(Product.id_user))
                     result = await session.execute(stmt)
-                    item = result.scalars().one_or_none()
-                    if item is None:
+                    product = result.scalars().one_or_none()
+
+                    if product is None:
                         print(f"Product with ID {p_id} not found.")
                         return {"message": "Product not found", "id": p_id}
 
-                    await session.delete(item)
+                    user_stmt = select(User).where(User.id == product.id_user)
+                    user_result = await session.execute(user_stmt)
+                    user = user_result.scalars().one_or_none()
+
+                    if user is None:
+                        print(f"User with ID {product.id_user} not found.")
+                        return {"message": "User not found", "id_user": product.id_user}
+
+                    if user.output_data:
+                        output_data = user.output_data
+                        updated_output_data = [item for item in output_data if item.get("id") != p_id]
+
+                        # Обновить пользователя в базе данных
+                        user_update_stmt = update(User).where(User.id == user.id).values(
+                            output_data=updated_output_data)
+                        await session.execute(user_update_stmt)
+
+                    await session.delete(product)
                     print(f"Product with ID {p_id} scheduled for deletion.")
                     await session.commit()
+
                     return {"message": "Product deleted", "id": p_id}
 
                 except Exception as e:
@@ -137,13 +175,21 @@ class Core:
                         print(f"Product with ID {p_id} not found.")
                         return {"message": "Product not found", "id": p_id}
                     if item.id_user != cur_user:
-                        raise HTTPException(status_code=400, detail=f"Вы не владелец этого продукта {current_user}")
+                        raise HTTPException(status_code=400, detail=f"Вы не владелец этого продукта {cur_user}")
 
+                    # Обновление полей продукта
                     for key, value in kwargs.items():
                         setattr(item, key, value)
 
+                    # Обновление output_data в продукте
+                    item.output_data = {
+                        "username": kwargs.get("username", item.output_data.get("username")),
+                        "email": kwargs.get("email", item.output_data.get("email")),
+                        "password": kwargs.get("password", item.output_data.get("password"))
+                    }
+
                     await session.commit()
-                    return {"message": "Product reworked", "id": p_id}
+                    return item
 
                 except Exception as e:
                     print(f"Error during rework: {str(e)}")
