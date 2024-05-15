@@ -1,8 +1,10 @@
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTable
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from fastapi_users.db import SQLAlchemyUserDatabase
 from sqlalchemy import Column, Integer, String, Boolean, MetaData
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.database import Base
+from src.database import Base, async_engine
 
 metadata = MetaData()
 
@@ -29,3 +31,4 @@ class User(SQLAlchemyBaseUserTable[int], Base):
         Boolean, default=False, nullable=False
     )
 
+user_db = SQLAlchemyUserDatabase(User, async_engine)

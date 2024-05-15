@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi_users import FastAPIUsers
 
 from src.auth.manager import get_user_manager
@@ -8,6 +8,7 @@ from src.auth.models import User
 
 from src.core import Core
 from src.products.router import router as products_router
+from src.auth.base_config import current_user
 
 app = FastAPI(
     title="Account shop",
@@ -34,5 +35,10 @@ app.include_router(products_router)
 
 @app.get("/")
 async def startup_event():
-    await Core.create_tables()
+    # await Core.create_tables()
     return {"message": "rework db done"}
+
+@app.get("/users/me")
+async def read_users_me(user: User = Depends(current_user)):
+    print(user.id)
+    return {"user_id": user.id}

@@ -1,4 +1,4 @@
-from fastapi import HTTPException
+from fastapi import HTTPException, Depends
 from sqlalchemy import and_, asc, desc, func, Integer, cast
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.future import select
@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from src.database import async_session_factory, async_engine, Base
 from src.products.database import Product
 from src.auth.models import User
+from src.auth.base_config import current_user
 
 class Core:
     @staticmethod
@@ -87,7 +88,8 @@ class Core:
                     game_rating={
                         "rating": int(self['rating_elo']),
                         "description": self['rating_name']
-                    }
+                    },
+                    id_user=self['id_user']
                 )
                 session.add(product)
                 await session.flush()
@@ -120,5 +122,52 @@ class Core:
 
                 except Exception as e:
                     print(f"Error during deletion: {str(e)}")
+                    await session.rollback()
+                    raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    async def rework_product(p_id: int, kwargs: dict, cur_user: int):
+        async with async_session_factory() as session:
+            async with session.begin():
+                try:
+                    stmt = select(Product).where(Product.id == p_id)
+                    result = await session.execute(stmt)
+                    item = result.scalars().one_or_none()
+                    if item is None:
+                        print(f"Product with ID {p_id} not found.")
+                        return {"message": "Product not found", "id": p_id}
+                    if item.id_user != cur_user:
+                        raise HTTPException(status_code=400, detail=f"Вы не владелец этого продукта {current_user}")
+
+                    for key, value in kwargs.items():
+                        setattr(item, key, value)
+
+                    await session.commit()
+                    return {"message": "Product reworked", "id": p_id}
+
+                except Exception as e:
+                    print(f"Error during rework: {str(e)}")
+                    await session.rollback()
+                    raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    async def buy_item(p_id: int, cur_user: int):
+        async with async_session_factory() as session:
+            async with session.begin():
+                try:
+                    stmt = select(Product).where(Product.id == p_id)
+                    result = await session.execute(stmt)
+                    item = result.scalars().one_or_none()
+                    if item is None:
+                        print(f"Product with ID {p_id} not found.")
+                        return {"message": "Product not found", "id": p_id}
+                    if item.id_user == cur_user:
+                        raise HTTPException(status_code=400, detail=f"Вы не можете купить свой продукт {current_user}")
+                    await Core.delete_product(p_id)
+                    await session.commit()
+                    return {"message": "Product bought", "id": p_id}
+
+                except Exception as e:
+                    print(f"Error during buying: {str(e)}")
                     await session.rollback()
                     raise HTTPException(status_code=500, detail=str(e))

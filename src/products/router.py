@@ -4,10 +4,13 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.auth.models import User
 from src.database import get_async_session
 
 from src.core import Core
 from src.products.database import Product
+from src.auth.base_config import current_user
 
 router = APIRouter(
     tags=["products"],
@@ -27,7 +30,8 @@ def product_to_dict(product):
                 "rating": product.game_rating.get("rating", 0),
                 "description": product.game_rating.get("description", "")
             },
-            "images": [img.path for img in product.images]
+            "images": [img.path for img in product.images],
+            "id_user": product.id_user
         }
     return {}
 
@@ -37,7 +41,6 @@ async def get_prd(fst_id: int, lst_id: int, session: AsyncSession = Depends(get_
     stmt = select(Product).where(Product.id.between(fst_id, lst_id)).options(selectinload(Product.images))
     result = await session.execute(stmt)
     items = result.scalars().all()
-
     return [product_to_dict(item) for item in items]
 
 @router.get("/item/{id}")
@@ -61,7 +64,7 @@ async def get_products_by_tags(tags: str, offset: int = 0, limit: int = 30, meth
 
 @router.post("/add/item")
 async def add_product(name: str, price: int, description: str, tags: str, main_img: str, rating_elo: int,
-                      rating_name) -> dict:
+                      rating_name, user: User = Depends(current_user)) -> dict:
     try:
         item = await Core.add_product({
             "name": name,
@@ -70,7 +73,8 @@ async def add_product(name: str, price: int, description: str, tags: str, main_i
             "tags": tags,
             "main_img": main_img,
             "rating_elo": rating_elo,
-            "rating_name": rating_name
+            "rating_name": rating_name,
+            "id_user": user.id
         })
 
     except Exception as e:
@@ -88,7 +92,39 @@ async def delete_product(id: int) -> dict:
 
     return product_to_dict(item)
 
+@router.put("/rework/item/{id}", response_model=dict)
+async def rework_product(
+    id_product: int,
+    name: str,
+    price: int,
+    description: str,
+    tags: str,
+    main_img: str,
+    rating_elo: int,
+    rating_name: str,
+    cur_user: User = Depends(current_user),
+):
+    try:
+        item = await Core.rework_product(id_product, {
+            "name": name,
+            "price": price,
+            "description": description,
+            "tags": tags,
+            "main_img": main_img,
+            "game_rating": {"elo": rating_elo, "name": rating_name},
+        }, cur_user.id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return product_to_dict(item)
 
 
+@router.get("/buy/item/{id}")
+async def buy_product(id: int, user: User = Depends(current_user)) -> dict:
+    try:
+        item = await Core.buy_product(id, user.id)
 
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
+    return product_to_dict(item)

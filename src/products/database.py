@@ -27,5 +27,6 @@ class Product(Base):
     tags = Column(String)
     main_img = Column(String)
     game_rating = Column(JSONB)  # JSON тип для хранения сложных структур данных
+    id_user = Column(Integer, ForeignKey('user.id'))
 
     images = relationship("Image", back_populates="product")
