@@ -9,13 +9,15 @@ from src.auth.models import User
 from src.database import get_async_session
 
 from src.core import Core
-from src.products.database import Product
+from src.products.database import Product, Image
 from src.auth.base_config import current_user
+from src.products.utils import ImageCreate
 
 router = APIRouter(
     tags=["products"],
     prefix="/products"
 )
+
 
 def product_to_dict(product):
     if isinstance(product, Product):
@@ -85,6 +87,14 @@ async def add_product(name: str, price: int, description: str, tags: str, main_i
         raise HTTPException(status_code=400, detail=str(e))
 
     return product_to_dict(item)
+
+@router.post("/add/images/")
+async def create_image(image: ImageCreate, cur_user: User = Depends(current_user)):
+    try:
+        item = await Core.add_image(image)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"message": "Image added", "image": item}
 
 @router.post("/delete/item")
 async def delete_product(id: int) -> dict:

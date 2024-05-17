@@ -8,9 +8,10 @@ from sqlalchemy.dialects.postgresql import insert
 
 
 from src.database import async_session_factory, async_engine, Base
-from src.products.database import Product
+from src.products.database import Product, Image
 from src.auth.models import User
 from src.auth.base_config import current_user
+from src.products.utils import ImageCreate
 
 class Core:
     @staticmethod
@@ -114,13 +115,43 @@ class Core:
                     user.user_products.append(new_product_id)
 
                     # Обновляем пользователя в базе данных
-                    user_update_stmt = update(User).where(User.id == user.id).values(user_products=user.user_products)
+                    user_update_stmt = update(User).where(User.id == user.id).values(
+                        user_products=user.user_products)
                     await session.execute(user_update_stmt)
 
             await session.commit()
-            session.expunge_all()
+
+            # Явно загружаем связанные данные, такие как images
+            product_stmt = select(Product).options(joinedload(Product.images)).where(
+                Product.id == new_product_id)
+            product_result = await session.execute(product_stmt)
+            product = product_result.unique().scalars().one_or_none()
 
             return product
+
+    @staticmethod
+    async def add_image(image_data: ImageCreate):
+        async with async_session_factory() as session:
+            async with session.begin():
+                try:
+                    # Создаем новый объект Image
+                    new_image = Image(
+                        path=image_data.path,
+                        description=image_data.description,
+                        product_id=image_data.product_id
+                    )
+                    session.add(new_image)
+                    await session.flush()
+
+                    await session.commit()
+
+
+                    return new_image
+
+                except Exception as e:
+                    print(f"Error adding image: {str(e)}")
+                    await session.rollback()
+                    raise HTTPException(status_code=500, detail=str(e))
 
     @staticmethod
     async def delete_product(p_id: int):
@@ -168,9 +199,9 @@ class Core:
         async with async_session_factory() as session:
             async with session.begin():
                 try:
-                    stmt = select(Product).where(Product.id == p_id)
+                    stmt = select(Product).where(Product.id == p_id).options(joinedload(Product.images))
                     result = await session.execute(stmt)
-                    item = result.scalars().one_or_none()
+                    item = result.unique().scalars().one_or_none()  # Используем unique() для исключения дублирующих результатов
                     if item is None:
                         print(f"Product with ID {p_id} not found.")
                         return {"message": "Product not found", "id": p_id}
@@ -189,6 +220,8 @@ class Core:
                     }
 
                     await session.commit()
+#                    await session.refresh(item)  # Обновляем продукт после коммита
+
                     return item
 
                 except Exception as e:
